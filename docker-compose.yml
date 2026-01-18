@@ -1,0 +1,113 @@
+services:
+  # Application Service (PHP-FPM)
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: application
+    container_name: akaunting-app
+    restart: unless-stopped
+    working_dir: /var/www/html
+    volumes:
+      - ./storage:/var/www/html/storage
+      - ./bootstrap/cache:/var/www/html/bootstrap/cache
+      - ./vendor:/var/www/html/vendor
+    networks:
+      - akaunting-network
+    environment:
+      - APP_NAME=Akaunting
+      - APP_ENV=production
+      - APP_DEBUG=false
+      - APP_URL=https://billing.afintrix.com
+      - DB_CONNECTION=mysql
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_DATABASE=akaunting
+      - DB_USERNAME=akaunting
+      - DB_PASSWORD=akaunting_password
+      - CACHE_DRIVER=redis
+      - SESSION_DRIVER=redis
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  # Nginx Web Server
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: akaunting-nginx
+    restart: unless-stopped
+    expose:
+      - "80"
+    volumes:
+      - ./public:/var/www/html/public
+      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf
+    networks:
+      - akaunting-network
+    depends_on:
+      - app
+
+  # MySQL Database
+  mysql:
+    image: mysql:8.0
+    container_name: akaunting-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: akaunting
+      MYSQL_USER: akaunting
+      MYSQL_PASSWORD: akaunting_password
+      MYSQL_ROOT_PASSWORD: root_password
+    volumes:
+      - mysql_data:/var/lib/mysql
+    expose:
+      - "3306"
+    networks:
+      - akaunting-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+      interval: 10s
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: akaunting-redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    expose:
+      - "6379"
+    networks:
+      - akaunting-network
+    command: redis-server --appendonly yes
+
+  # Optional: phpMyAdmin for database management
+  phpmyadmin:
+    image: phpmyadmin:latest
+    container_name: akaunting-phpmyadmin
+    restart: unless-stopped
+    expose:
+      - "80"
+    environment:
+      PMA_HOST: mysql
+      PMA_USER: akaunting
+      PMA_PASSWORD: akaunting_password
+    networks:
+      - akaunting-network
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+volumes:
+  mysql_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  akaunting-network:
+    driver: bridge
